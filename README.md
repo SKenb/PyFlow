@@ -39,3 +39,4 @@ Consider a flow reactor with an effective length of 10 m and an effective diamet
 | A2_SimpleReactionExample_StepByStepSim | Simple step-by-step simulation of reactor |
 | B0_SimplePackedBedExample | Simple packed bed flow reactor |
 | B1_SimplePackedBedExample_StepByStepSim | Simple step-by-step simulation of a packed bed flow reactor |
+| B2_PackedBedExample_StoppingFlowRate.py | Packed bed flow reactor where flow rate is switched to zero |
