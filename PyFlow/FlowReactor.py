@@ -58,27 +58,33 @@ class FlowReactor:
         return np.arange(0, Tend, self.getProposedDeltaT(maxFlowRate))
 
     def __str__(self):
-        return f"FlowReactor (volume={1000*self.getReactorVolumeInLiters()} mL, length={self.length} m, diameter={1000*self.diameter} mm, D={self.dispersionCoefficient})"
+        return f"Flow Reactor (volume={1000*self.getReactorVolumeInLiters()} mL, length={self.length} m, diameter={1000*self.diameter} mm, D={self.dispersionCoefficient})"
 
     def setReactionNetworkCallback(self, reactionNetworkCallback):
         self.reactionNetworkCallback = reactionNetworkCallback
+
+    def getNumberOfSpecies(self):
+        if self.lastSimResult is None: raise ValueError("No simulation result available to determine number of species. - Maybe you can determine nSpecies from a parameter.")
+        _, Cspatial = self.lastSimResult
+        return Cspatial.shape[0]
 
     def plot(self, Cin=None, figure=None, showPlot=False, measuredCout=None, measuredCoutTimeVec=None, CinTimeVec=None, additionalTracesToPlot=None):
         if figure is None: figure = plt.figure()
         self.plotSpaceTime(figure=figure, rows=2, showPlot=False)
         self.plotOutputConcentration(Cin=Cin, measuredCout=measuredCout, measuredCoutTimeVec=measuredCoutTimeVec, CinTimeVec=CinTimeVec, additionalTracesToPlot=additionalTracesToPlot, figure=figure, rows=2, rowIdx=2, showPlot=showPlot)
 
-    def plotSpaceTime(self, title="Reactor Time Evolution (3D)", figure=None, rows=1, rowIdx=1, showPlot=False):
+    def plotSpaceTime(self, title="Reactor Time Evolution (3D)", figure=None, rows=1, rowIdx=1, showPlot=False, _cols=None):
         if self.lastSimResult is None: return
         time, Cspatial = self.lastSimResult
-        [nSpecies, _, _] = Cspatial.shape
+        nSpecies = self.getNumberOfSpecies()
+        numberOfCols = nSpecies if _cols is None else _cols
 
         if figure is None: figure = plt.figure()
 
         X, Y = np.meshgrid(time, self.getReactorSpaceSamples())
 
         for i in range(nSpecies):
-            ax = figure.add_subplot(rows, nSpecies, ((nSpecies * (rowIdx-1)) + i+1), projection='3d')
+            ax = figure.add_subplot(rows, numberOfCols, ((numberOfCols * (rowIdx-1)) + i+1), projection='3d')
 
             surf = ax.plot_surface(X, Y, Cspatial[i, :, :], cmap='viridis')
 
@@ -93,15 +99,16 @@ class FlowReactor:
         figure.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
         if showPlot: plt.show()
 
-    def plotOutputConcentration(self, Cin=None, labelCout="Cout", measuredCout=None, measuredCoutTimeVec=None, CinTimeVec=None, additionalTracesToPlot=None, title="Reactor Time Evolution (2D)", figure=None, rows=1, rowIdx=1, showPlot=True):
+    def plotOutputConcentration(self, Cin=None, labelCout="Cout", measuredCout=None, measuredCoutTimeVec=None, CinTimeVec=None, additionalTracesToPlot=None, title="Reactor Time Evolution (2D)", figure=None, rows=1, rowIdx=1, showPlot=True, _cols=None):
         if self.lastSimResult is None: return
         time, Cspatial = self.lastSimResult
-        [nSpecies, _, _] = Cspatial.shape
+        nSpecies = self.getNumberOfSpecies()
+        numberOfCols = nSpecies if _cols is None else _cols 
 
         if figure is None: figure = plt.figure()
 
         for i in range(nSpecies):
-            ax = figure.add_subplot(rows, nSpecies, ((nSpecies * (rowIdx-1)) + i+1))
+            ax = figure.add_subplot(rows, numberOfCols, ((numberOfCols * (rowIdx-1)) + i+1))
 
             if Cin is not None: 
                 Cin_i = Cin[i, :]
@@ -199,47 +206,14 @@ class FlowReactor:
         temperature = temperature if np.isscalar(temperature) else temperature_fcn(timeVec_step)
         flowRate = flowRate if np.isscalar(flowRate) else flowRate_fcn(timeVec_step)
 
-        return self.simulate(timeVec_step, Cin, flowRate, isVolumetricFlowRate=False, temperature=temperature, Cspatial0=Cspatial0, method=method, rtol=rtol, atol=atol)
+        return self.coreSimulateFunction(timeVec_step, Cin, flowRate, isVolumetricFlowRate=False, temperature=temperature, Cspatial0=Cspatial0, method=method, rtol=rtol, atol=atol)
 
-    def simulate(self, timeVec, Cin, flowRate, temperature=20, isVolumetricFlowRate=True, Cspatial0=None, method="RK45", rtol=1e-6, atol=1e-6):
+    def simulate(self, timeVec, Cin, flowRate, temperature=20, isVolumetricFlowRate=True, method="RK45", rtol=1e-6, atol=1e-6, Cspatial0=None):
+        return self.coreSimulateFunction(timeVec, Cin, flowRate, temperature, isVolumetricFlowRate, method, rtol, atol, Cspatial0)
+
+    def coreSimulateFunction(self, timeVec, Cin, flowRate, temperature=20, isVolumetricFlowRate=True, method="RK45", rtol=1e-6, atol=1e-6, Cspatial0=None):
         if isVolumetricFlowRate: flowRate = self.volumetricFlowRateToFlowRate(flowRate)  
         
-        def get_dCdt(t, Cvec, nSpecies, dx, timeVec, Cin, flowRate, temperature):
-            # Csvec = [A1, A2, A3, ... AN, B1, B2, B3, ... BN, ...] 
-            # A = C1, B = C2, ...
-            # A1 at pos 1
-
-            dCdx = np.zeros_like(Cvec)
-            dC2d2x = np.zeros_like(Cvec)
-            rCi = np.zeros_like(Cvec)
-
-            # It might be, that the ivp_solve also uses time samples in between the time samples of Cin
-            input_fcn = interp1d(timeVec, Cin, kind='linear', fill_value="extrapolate")
-            temperature_fcn = (lambda _: temperature) if np.isscalar(temperature) else interp1d(timeVec, temperature, kind='linear', fill_value="extrapolate")
-            flowRate_fcn = (lambda _: flowRate) if np.isscalar(flowRate) else interp1d(timeVec, flowRate, kind='linear', fill_value="extrapolate")
-
-            for i in range(nSpecies): 
-                sIdx = i * self.xSamples
-                eIdx = (i + 1) * self.xSamples
-
-                # Convection
-                Ci_spatial = Cvec[sIdx:eIdx]
-                dCdx[sIdx+1:eIdx] = (Ci_spatial[1:] - Ci_spatial[:-1]) / dx
-                dCdx[sIdx] = (Ci_spatial[0] - input_fcn(t)[i]) / dx
-
-                # Dispersion
-                dC2d2x[sIdx] = (input_fcn(t)[i] - 2*Ci_spatial[0] + Ci_spatial[1]) / dx**2
-
-                d2Cidx2_center = (Ci_spatial[:-2] - 2*Ci_spatial[1:-1] + Ci_spatial[2:]) / dx**2
-                d2Cidx2_end = (Ci_spatial[-2] - Ci_spatial[-1]) / dx**2
-                dC2d2x[sIdx+1:eIdx] = np.append(d2Cidx2_center, d2Cidx2_end)
-
-                # Reaction
-                if self.reactionNetworkCallback is not None:
-                    rCi[sIdx:eIdx] = self.reactionNetworkCallback(Cvec.reshape(nSpecies, self.xSamples), i, temperature_fcn(t))
-
-            return self.dispersionCoefficient * dC2d2x -1 * flowRate_fcn(t) * dCdx + rCi
-
         # Multiple concentration inputs
         # Cin [Species Idx x time]
         # reactionNetworkCallback: Cspatial_t-1 
@@ -255,7 +229,7 @@ class FlowReactor:
         # t_eval specifies the time points where you want the solver to output results.
         # The solver still internally takes as many steps as needed (adaptive stepping) to maintain accuracy, even between the specified t_eval points.
         # You can choose t_eval to include times of known discontinuities or events of interest while letting the solver handle the intermediate computations adaptively.
-        derivative_f = lambda t_, x_: get_dCdt(t_, x_, nSpecies, dx, timeVec, Cin, flowRate, temperature)
+        derivative_f = lambda t_, x_: self.get_dCdt(t_, x_, nSpecies, dx, timeVec, Cin, flowRate, temperature)
         solution = solve_ivp(derivative_f, (timeVec[0], timeVec[-1]), Cvec0, t_eval=timeVec, method=method, rtol=rtol, atol=atol)
         
         time = solution.t
@@ -269,58 +243,39 @@ class FlowReactor:
 
         self.lastSimResult = (time, Cspatial)
         return time, Cout, Cspatial
-    
-    def simulateExplicitEuler(self, timeVec, Cin, flowRate, temperature=20, isVolumetricFlowRate=True, Cspatial0=None):
-        # Multiple concentration inputs
-        # Cin [Species Idx x time]
-        # reactionNetworkCallback: Cspatial_t-1 
-        #   [nSpecies x nReactorSamples], speciesIdx, temperature [in °C] -> reactionRates i [nReactorSamples] 
-        if isVolumetricFlowRate: flowRate = self.volumetricFlowRateToFlowRate(flowRate)  
-        [nSpecies, nTimeSamples] = Cin.shape
 
-        dt = timeVec[1] - timeVec[0]
-        dx = self.length / self.xSamples
+    def get_dCdt(self, t, Cvec, nSpecies, dx, timeVec, Cin, flowRate, temperature):
+        # Csvec = [A1, A2, A3, ... AN, B1, B2, B3, ... BN, ...] 
+        # A = C1, B = C2, ...
+        # A1 at pos 1
 
-        # speciesIdx x time x space - where space idx 0 = inlet thus +1
-        Cspatial = np.zeros((nSpecies, nTimeSamples, self.xSamples+1))
-        Cspatial[:, :, 0] = Cin[:, :]
-        if Cspatial0 is not None:
-            assert Cspatial0.shape == (nSpecies, self.xSamples)
-            Cspatial[:, 0, 1:] = Cspatial0
+        dCdx = np.zeros_like(Cvec)
+        dC2d2x = np.zeros_like(Cvec)
+        rCi = np.zeros_like(Cvec)
 
-        
-        # Time loop
-        for t in range(nTimeSamples):
-            if t <= 0: continue # skip first time step x0 = 0
+        # It might be, that the ivp_solve also uses time samples in between the time samples of Cin
+        input_fcn = interp1d(timeVec, Cin, kind='linear', fill_value="extrapolate")
+        temperature_fcn = (lambda _: temperature) if np.isscalar(temperature) else interp1d(timeVec, temperature, kind='linear', fill_value="extrapolate")
+        flowRate_fcn = (lambda _: flowRate) if np.isscalar(flowRate) else interp1d(timeVec, flowRate, kind='linear', fill_value="extrapolate")
 
-            temperature_t = temperature if np.isscalar(temperature) else temperature[t]
-            flowRate_t = flowRate if np.isscalar(flowRate) else flowRate[t]
-    
-            for i in range(nSpecies):
+        for i in range(nSpecies): 
+            sIdx = i * self.xSamples
+            eIdx = (i + 1) * self.xSamples
 
-                # Dispersion
-                d2Cidx2_center = (Cspatial[i, t-1, :-2] - 2*Cspatial[i, t-1, 1:-1] + Cspatial[i, t-1, 2:]) / dx**2
-                d2Cidx2_end = (Cspatial[i, t-1, -2] - Cspatial[i, t-1, -1]) / dx**2
-                d2Cidx2 = np.append(d2Cidx2_center, d2Cidx2_end)
+            # Convection
+            Ci_spatial = Cvec[sIdx:eIdx]
+            dCdx[sIdx+1:eIdx] = (Ci_spatial[1:] - Ci_spatial[:-1]) / dx
+            dCdx[sIdx] = (Ci_spatial[0] - input_fcn(t)[i]) / dx
 
-                # Convection
-                dCidx = (Cspatial[i, t-1, 1:] - Cspatial[i, t-1, :-1]) / dx
+            # Dispersion
+            dC2d2x[sIdx] = (input_fcn(t)[i] - 2*Ci_spatial[0] + Ci_spatial[1]) / dx**2
 
-                # Reaction
-                rCi = np.zeros(self.xSamples)
+            d2Cidx2_center = (Ci_spatial[:-2] - 2*Ci_spatial[1:-1] + Ci_spatial[2:]) / dx**2
+            d2Cidx2_end = (Ci_spatial[-2] - Ci_spatial[-1]) / dx**2
+            dC2d2x[sIdx+1:eIdx] = np.append(d2Cidx2_center, d2Cidx2_end)
 
-                if self.reactionNetworkCallback is not None:
-                    rCi = self.reactionNetworkCallback(Cspatial[:, t-1, 1:], i, temperature_t)
+            # Reaction
+            if self.reactionNetworkCallback is not None:
+                rCi[sIdx:eIdx] = self.reactionNetworkCallback(Cvec.reshape(nSpecies, self.xSamples), i, temperature_fcn(t))
 
-                # Update concentration
-                Cspatial[i, t, 1:] = Cspatial[i, t-1, 1:] + dt * (self.dispersionCoefficient * d2Cidx2 - flowRate_t * dCidx + rCi)
-
-
-        # Cspatial = [nSpecies x nReactorSamples x nTimeSamples]
-        Cspatial = Cspatial.transpose(0, 2, 1)
-        Cout = Cspatial[:, -1, :]
-
-
-        self.lastSimResult = (timeVec, Cspatial)
-        return timeVec, Cout, Cspatial
-    
+        return self.dispersionCoefficient * dC2d2x -1 * flowRate_fcn(t) * dCdx + rCi
