@@ -32,7 +32,7 @@ Consider a flow reactor with an effective length of 10 m and an effective diamet
 ## Examples
 
 
-| Links | Rechts |
+| Filename | Rechts |
 |:------|:-------|
 | A0_SimpleExample | Simple reactor used for simulation |
 | A1_SimpleReactionExample | Simple reactor with a reaction |
