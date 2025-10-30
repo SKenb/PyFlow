@@ -22,6 +22,41 @@ class PackedBedFlowReactor(FlowReactor):
         return f"Packed-Bed Flow Reactor (volume={1000*self.getReactorVolumeInLiters()} mL, length={self.length} m, diameter={1000*self.diameter} mm, D={self.dispersionCoefficient})"
     
 
+    def simulateStep(self, startTime, endTime, timeVec, Cin, flowRate, temperature=20, isVolumetricFlowRate=True, method="RK45", rtol=0.000001, atol=0.000001, Cspatial0=None):
+        numberOfSpecies = Cin.shape[0]
+
+        if Cspatial0 is None:
+            if self.lastSimResult is not None:
+                _, prevCspatial = self.lastSimResult
+                Cspatial0 = prevCspatial[:, 1:, -1]
+            else:
+                Cspatial0 = np.zeros((numberOfSpecies, self.xSamples))
+
+        
+        if Cspatial0.shape[0] == numberOfSpecies:
+            # Need to add packed bed quality to Cspatial0
+            Qspatial0 = self.packedBedInitQuality * np.ones(self.xSamples)
+            if self.lastSimResultForPackedBed is not None:
+                _, Qspatial0 = self.lastSimResultForPackedBed
+                Qspatial0 = Qspatial0[:, -1]
+
+            Cspatial0 = np.vstack([Cspatial0, Qspatial0])
+
+            # Add one more Cin which is the placeholder for packed bed quality
+            Cin = np.vstack([Cin, np.zeros(len(timeVec))])
+
+        time, Cout, Cspatial = super().simulateStep(startTime, endTime, timeVec, Cin, flowRate, temperature, isVolumetricFlowRate, method, rtol, atol, Cspatial0)
+        # store and remove packed bed quality from Cout and Cspatial
+        packedBedSimResult = Cspatial[-1, :, :].copy()  # store packed bed quality evolution
+        self.lastSimResultForPackedBed = (time, packedBedSimResult[1:, :])  # skip inlet point for better visualization
+
+        Cout = Cout[:-1, :]
+        Cspatial = Cspatial[:-1, :, :]
+        self.lastSimResult = (time, Cspatial)
+
+        return time, Cout, Cspatial
+    
+
     def simulate(self, timeVec, Cin, **kwargs):
         nSpecies = Cin.shape[0]
         Cspatial0 = kwargs.get("Cspatial0", None)
@@ -31,9 +66,7 @@ class PackedBedFlowReactor(FlowReactor):
 
         # Prepare Cspatial0 with packed bed quality
         Qspatial0 = self.packedBedInitQuality * np.ones(self.xSamples)
-
-        if Cspatial0 is None:
-            Cspatial0 = np.zeros((nSpecies, self.xSamples))
+        if Cspatial0 is None: Cspatial0 = np.zeros((nSpecies, self.xSamples))
 
         Cspatial0 = np.vstack([Cspatial0, Qspatial0])
         kwargs["Cspatial0"] = Cspatial0
