@@ -27,3 +27,14 @@ The Packed Bed Flow Reactor class models a reactor containing a packed bed, wher
 Consider a flow reactor with an effective length of 10 m and an effective diameter of 0.8 mm, in which a catalyst plays a key role. A single species with a defined inlet concentration enters the reactor, where it reacts with the catalyst. As the reaction proceeds, the species is consumed, a new species forms, and the catalyst gradually loses activity over time and along the reactor length.
 
 ![PyFlow - Simple reactor example with reaction](images/PyFlow_SimplePackedBedReactorExampleWithReaction.png)
+
+
+## Examples
+
+
+| Links | Rechts |
+|:------|:-------|
+| A0_SimpleExample | Simple reactor used for simulation |
+| A1_SimpleReactionExample | Simple reactor with a reaction |
+| A2_SimpleReactionExample_StepByStepSim | Simple step-by-step simulation of reactor |
+| B0_SimplePackedBedExample | Simple packed bed flow reactor |
