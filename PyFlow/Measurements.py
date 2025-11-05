@@ -2,6 +2,7 @@ import csv
 import matplotlib.pyplot as plt
 import os
 import numpy as np
+import pickle
 
 from openpyxl import load_workbook
 from datetime import datetime
@@ -55,12 +56,16 @@ def loadFromFile(filePath, delimiter=',', headerRow=1, startDataRow=2, headerRen
                         pass
 
                 except Exception as e:
-                    print(f"Error parsing value '{value}' for column '{key}': {e}")
+                    #print(f"Error parsing value '{value}' for column '{key}': {e}")
                     parsed_value = float('nan')
 
             data.setdefault(str(key).strip(), []).append(parsed_value)
 
     return data
+
+def saveToPickle(data, filePath):
+    with open(filePath, 'wb') as f:
+        pickle.dump(data, f)
 
 def removeNaNEntries(data, keys=None):
     if keys is None: keys = data.keys()
@@ -69,6 +74,17 @@ def removeNaNEntries(data, keys=None):
 
     cleanedData = {key: [data[key][i] for i in validIndices] for key in data}
     return cleanedData
+
+def reduceDataToTimeRange(data, timeKey, startTime, endTime):
+    if timeKey not in data: raise KeyError(f"Time key '{timeKey}' not found in data.")
+
+    reducedData = {key: [] for key in data}
+    for i, t in enumerate(data[timeKey]):
+        if startTime <= t <= endTime:
+            for key in data:
+                reducedData[key].append(data[key][i])
+
+    return reducedData
 
 def addRelativeTime(data, timeKey, relTimeKey="RelTime", timeOffsetInSeconds=0):
     if timeKey not in data: raise KeyError(f"Time key '{timeKey}' not found in data.")
@@ -106,11 +122,15 @@ def mergeDataSetsOnTimeKey(dataSet1, dataSet2, timeKey, newCommonTimeVector=None
             except Exception as e:
                 print(f"Error interpolating key '{key}' from dataSet2: {e}")
                 mergedData[key] = [None] * len(newCommonTimeVector)
+
         else:
-            #data1Interp = interpolate(dataSet1[key], dataSet1[timeKey])
-            #data2Interp = interpolate(dataSet2[key], dataSet2[timeKey])
-            #mergedData[key] = [d1 if d1 is not None else d2 for d1, d2 in zip(data1Interp, data2Interp)]
-            mergedData[key] = "Conflict in merged data sets. Key exists in both data sets."
+            try:
+                data1Interp = interpolate(dataSet1[key], dataSet1[timeKey])
+                data2Interp = interpolate(dataSet2[key], dataSet2[timeKey])
+                mergedData[key] = [data2Interp[idx] if time >= dataSet2[timeKey][0] else data1Interp[idx] for idx, time in enumerate(newCommonTimeVector)]
+            except Exception as e:
+                print(f"Error interpolating key '{key}' from both data sets: {e}")
+                mergedData[key] = [None] * len(newCommonTimeVector)
 
     return mergedData
 
