@@ -1,4 +1,4 @@
-from PyFlow.Measurements import deriveNewKeyFromData, loadFromFile, addRelativeTime, mergeDataSetsOnTimeKey, plotData, removeNaNEntries, reduceDataToTimeRange, saveToPickle
+from PyFlow.Measurements import addTimeOffset, deriveNewKeyFromData, loadFromFile, addRelativeTime, mergeDataSetsOnTimeKey, plotData, removeNaNEntries, reduceDataToTimeRange, saveToPickle
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -93,12 +93,19 @@ def deriveInputConcentrations(inputData):
 
 
 def main():
-    irMeasurements = loadIRMeasurements(timeOffsetInSeconds=-750)
+    # Load and merge measurement data
+    irMeasurements = loadIRMeasurements(timeOffsetInSeconds=0)
     uhplcMeasurements = loadUHPLCMeasurements(timeOffsetInSeconds=0)  # Adjust time offset as needed
 
-    mergedMeasurements = mergeDataSetsOnTimeKey(irMeasurements, uhplcMeasurements, "RelTime", newCommonTimeVector=irMeasurements["RelTime"])
-    mergedMeasurements["Time"] = uhplcMeasurements["Time"]  # Keep original time from UHPLC measurements as timestamp is absolute
+    mergedMeasurements = uhplcMeasurements
+    for irLimitAndOffset in [[-1, 1e12, -750], [3.5*3600, 1e12, 0], [143*3600, 1e12, -1908], [960*3600, 1e12, -10038]]:
+        irMeasurementsLimited = reduceDataToTimeRange(irMeasurements, "RelTime", irLimitAndOffset[0], irLimitAndOffset[1])
+        irMeasurementsLimited = addTimeOffset(irMeasurementsLimited, "RelTime", timeOffsetInSeconds=irLimitAndOffset[2])
 
+        mergedMeasurements = mergeDataSetsOnTimeKey(mergedMeasurements, irMeasurementsLimited, "RelTime", newCommonTimeVector=irMeasurements["RelTime"])
+        mergedMeasurements["Time"] = uhplcMeasurements["Time"]  # Keep original time from UHPLC measurements as timestamp is absolute
+
+    # Load and merge input data
     xlimits = []
     for inputDataLoader in [loadInputDataFrom_Jun06, loadInputDataFrom_Jun10, loadInputDataFrom_Jun12, loadInputDataFrom_Jun16, loadInputDataFrom_Jul01, loadInputDataFrom_Jul14, loadInputDataFrom_Jul21]: #loadInputDataFrom_Jun06, loadInputDataFrom_Jun10,
         inputData = inputDataLoader()
@@ -110,8 +117,8 @@ def main():
         mergedMeasurements = mergeDataSetsOnTimeKey(mergedMeasurements, inputData, "RelTime", newCommonTimeVector=mergedMeasurements["RelTime"]) 
         mergedMeasurements["Time"] = uhplcMeasurements["Time"]
 
-
-    xlimits = [[0, 4], [143, 148.1], [192, 194], [288, 290], [647.5, 648.5], [958, 973]]
+    # Experiment #1       #2            #3           #4           #5           #6           #7
+    xlimits = [[0, 1], [1.75, 3.5], [143, 148.1], [180, 210], [280, 310], [647.5, 648.5], [960, 964]]
     for xlimits in xlimits:
         plotData(mergedMeasurements, 
             showPlot=False,
@@ -155,8 +162,8 @@ def main():
             ]
         )
 
-        reducedData = reduceDataToTimeRange(mergedMeasurements, "RelTime", xlimits[0], xlimits[1])
-        saveToPickle(reducedData, f"C:\\Users\\sebkno\\SynologyDrive\\PhD\\11_Hydrogenation\\B0_BuchwaldHartwigReaction\\PreparedData\\PreparedMeasurements_{int(xlimits[0])}_{int(xlimits[1])}.pkl")
+        #reducedData = reduceDataToTimeRange(mergedMeasurements, "RelTime", xlimits[0]*3600, xlimits[1]*3600)
+        #saveToPickle(reducedData, f"C:\\Users\\sebkno\\SynologyDrive\\PhD\\11_Hydrogenation\\B0_BuchwaldHartwigReaction\\PreparedData\\PreparedMeasurements_{int(xlimits[0])}_{int(xlimits[1])}.pkl")
 
     plt.show()
 

@@ -63,6 +63,17 @@ def loadFromFile(filePath, delimiter=',', headerRow=1, startDataRow=2, headerRen
 
     return data
 
+def filterDataByKey(data, key, filterFunction):
+    if key not in data: raise KeyError(f"Key '{key}' not found in data.")
+
+    filteredData = {k: [] for k in data}
+    for i, v in enumerate(data[key]):
+        if filterFunction(v):
+            for k in data:
+                filteredData[k].append(data[k][i])
+
+    return filteredData
+
 def saveToPickle(data, filePath):
     with open(filePath, 'wb') as f:
         pickle.dump(data, f)
@@ -91,6 +102,12 @@ def addRelativeTime(data, timeKey, relTimeKey="RelTime", timeOffsetInSeconds=0):
 
     startTime = data[timeKey][0]
     data[relTimeKey] = [(t - startTime).total_seconds() + timeOffsetInSeconds if t is not None else None for t in data[timeKey]]
+    return data
+
+def addTimeOffset(data, timeKey_seconds, timeOffsetInSeconds):
+    if timeKey_seconds not in data: raise KeyError(f"Time key '{timeKey_seconds}' not found in data.")
+
+    data[timeKey_seconds] = [(t + timeOffsetInSeconds) if t is not None else None for t in data[timeKey_seconds]]
     return data
 
 def mergeDataSetsOnTimeKey(dataSet1, dataSet2, timeKey, newCommonTimeVector=None):
@@ -149,6 +166,7 @@ def plotData(data, plotDataDictArray, showPlot=True, figure=None):
         xLabel = plotData.get("xLabel", xKey)
         yLabel = plotData.get("yLabel", "Data")
         xLimit = plotData.get("xLimit", None)
+        yLimit = plotData.get("yLimit", None)
 
         ax = figure.add_subplot(len(plotDataDictArray), 1, index + 1)
         for yKey in yKeys:  
@@ -162,6 +180,7 @@ def plotData(data, plotDataDictArray, showPlot=True, figure=None):
         ax.set_xlabel(xLabel)
         ax.set_ylabel(yLabel)
         if xLimit: ax.set_xlim(xLimit)
+        if yLimit: ax.set_ylim(yLimit)
         ax.legend()
         ax.grid(True)
 
