@@ -5,12 +5,61 @@ import matplotlib.pyplot as plt
 from PyFlow.Measurements import loadFromPickle, plotData
 from PyFlow.FlowReactor import FlowReactor
 
+def buchwaldHartwigReaction(C, i, temperature):
+    temperature_K = temperature + 273.15
+    reactionRate = lambda Ca, Cb, A, E: A * np.exp(-E/(8.314*temperature_K)) * Ca * Cb
+    
+    reactionMap = {
+        0: { "consumed": {1: 1}, "produced": {} },
+        1: { "consumed": {2: 1}, "produced": {} },
+        2: { "consumed": {3: 1}, "produced": {} },
+        3: { "consumed": {1: 1}, "produced": {4: 1} },
+        4: { "consumed": {2: 1}, "produced": {1: 1} },
+        5: { "consumed": {3: 1}, "produced": {2: 1} },
+        6: { "consumed": {4: 1}, "produced": {3: 1} },
+        7: { "consumed": {}, "produced": {4: 1} },
+    }
+    
+    # Reaction 1 - Catalyst (PdL) + 2-Brom --> PdInt1
+    R1 = reactionRate(C[3, :], C[0, :], 1.8, 34_625)
+    R1[np.where(np.isnan(R1))] = 0
+
+
+    # Reaction 2 - PdInt1 + Thiophene --> PdInt2
+    R2 = reactionRate(C[4, :], C[1, :], 4.95, 40_382)
+    R2[np.where(np.isnan(R2))] = 0
+
+    # Reaction 3 - PdInt2 + DBU --> PdInt3 + HBr
+    R3 = reactionRate(C[5, :], C[2, :], 265.83, 60_000)
+    R3[np.where(np.isnan(R3))] = 0
+
+    # Reaction 4 - PdInt3 --> Catalyst (PdL) + Product
+    R4 = reactionRate(C[6, :], 1, 160.7, 60_000)
+    R4[np.where(np.isnan(R4))] = 0
+
+    RMap = { 1: R1, 2: R2, 3: R3, 4: R4}
+
+    # Total rates of change
+    reactionInfos = reactionMap[i]
+
+    R = np.zeros_like(C[0, :])
+    for idx, coeff in reactionInfos["produced"].items(): R += coeff * RMap[idx]
+    for idx, coeff in reactionInfos["consumed"].items(): R -= coeff * RMap[idx]
+    if np.isnan(R).any(): raise ValueError(f"Reaction rate for species index {i} contains NaN values.")
+    
+    return R
+
+
 def main():
     pickleFilePath = "C:\\Users\\sebkno\\SynologyDrive\\PhD\\11_Hydrogenation\\B0_BuchwaldHartwigReaction\\PreparedData\\"
     pickleFiles = os.listdir(pickleFilePath)
     dataSets = {}
 
-    flowReactor = FlowReactor(length=10, diameter=0.8*1e-3)
+    flowReactor = FlowReactor(
+        length=10, diameter=0.8*1e-3, 
+        reactionNetworkCallback=buchwaldHartwigReaction,
+        setSpaceSamples=50
+    )
     flowReactor.setVolumeIn_mL(4.67)
 
     print(flowReactor)
@@ -42,28 +91,60 @@ def main():
             )
 
 
-            # Plot data
-            plotData(data,
-                showPlot=True,
+            ## Plot data
+            #plotData(data,
+            #    showPlot=False,
+            #    plotDataDictArray=[
+            #        {
+            #            "xKey": "RelTime",
+            #            "xKeyFormatter": lambda tInSeconds: tInSeconds/3600,
+            #            "yKeys": [key for key in data.keys() if key.startswith("Meas")],
+            #            "title": f"Measured Concentrations over Time from {pf}",
+            #            "xLabel": "Time in hours",
+            #            "yLabel": "Concentration in mol/L",
+            #        }
+            #    ]
+            #)
+
+            plotData(
+                data,
+                showPlot=False,
                 plotDataDictArray=[
                     {
                         "xKey": "RelTime",
                         "xKeyFormatter": lambda tInSeconds: tInSeconds/3600,
-                        "yKeys": [key for key in data.keys() if key.startswith("Meas")],
-                        "title": f"Measured Concentrations over Time from {pf}",
+                        "yKeys": ["Conc 2-bromonitrobenze", "Conc Thiophene", "Conc DBU", "Conc Xantphos"],
+                        "title": f"Input Concentrations over Time from {pf}",
                         "xLabel": "Time in hours",
                         "yLabel": "Concentration in mol/L",
                     }
-                ]
+                ]   
             )
 
             # Plot outputs
             figure = plt.figure(figsize=(10, 6))
-            plt.plot(time, Cout[0, :], label="Cout 2-bromonitrobenze")
-            plt.plot(timeVec, data["Meas Bromonitrobenzene (UHPLC)"], label="Measured 2-bromonitrobenze (UHPLC)")
-            plt.plot(timeVec, data["Meas Bromonitrobenzene (IR)"], label="Measured 2-bromonitrobenze (IR)")
+
+            toPlotData = [
+                {"Cout_Index": 0, "label": "Cout 2-bromonitrobenze", "UHPLC_Key": "Meas Bromonitrobenzene (UHPLC)" , "IR_Key": "Meas Bromonitrobenzene (IR)"},
+                {"Cout_Index": 1, "label": "Cout Thiophene", "UHPLC_Key": "Meas Thiophene (UHPLC)" , "IR_Key": "Meas Thiophene (IR)"},
+                {"Cout_Index": 4, "label": "Cout Product", "UHPLC_Key": "Meas Product (UHPLC)" , "IR_Key": "Meas Product (IR)"},
+            ]
+
+            for idx, plotInfo in enumerate(toPlotData):
+
+                ax = figure.add_subplot(len(toPlotData), 1, idx + 1)
+
+                ax.plot(time, Cout[plotInfo["Cout_Index"], :], label=plotInfo["label"])
+                ax.plot(timeVec, data[plotInfo["UHPLC_Key"]], label=f"Measured {plotInfo['label']} (UHPLC)")
+                ax.plot(timeVec, data[plotInfo["IR_Key"]], label=f"Measured {plotInfo['label']} (IR)")
+                ax.set_title(f"Outlet Concentration vs Measured Data from {pf}")
+                ax.set_xlabel("Time in seconds")
+                ax.set_ylabel("Concentration in mol/L")
+                ax.legend()
             
             plt.show()
+
+            print(f"Simulation for {pf} completed.")
 
 
 if __name__ == "__main__":
