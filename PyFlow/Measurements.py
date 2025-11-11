@@ -78,6 +78,11 @@ def saveToPickle(data, filePath):
     with open(filePath, 'wb') as f:
         pickle.dump(data, f)
 
+def loadFromPickle(filePath):
+    with open(filePath, 'rb') as f:
+        data = pickle.load(f)
+    return data
+
 def removeNaNEntries(data, keys=None):
     if keys is None: keys = data.keys()
 

@@ -27,6 +27,10 @@ class FlowReactor:
 
     def getVolumeIn_mL(self):
         return self.volume * 1e6
+    
+    def setVolumeIn_mL(self, volumeIn_mL):
+        self.volume = volumeIn_mL * 1e-6
+        self.length = self.volume / self.getReactorCrossSection()
 
     def setDispersionCoefficient(self, dispersionCoefficient):
         self.dispersionCoefficient = dispersionCoefficient
@@ -58,7 +62,7 @@ class FlowReactor:
         return np.arange(0, Tend, self.getProposedDeltaT(maxFlowRate))
 
     def __str__(self):
-        return f"Flow Reactor (volume={1000*self.getReactorVolumeInLiters()} mL, length={self.length} m, diameter={1000*self.diameter} mm, D={self.dispersionCoefficient})"
+        return f"Flow Reactor (volume={1000*self.getReactorVolumeInLiters():.2f} mL, length={self.length:.2f} m, diameter={1000*self.diameter:.2f} mm, D={self.dispersionCoefficient})"
 
     def setReactionNetworkCallback(self, reactionNetworkCallback):
         self.reactionNetworkCallback = reactionNetworkCallback

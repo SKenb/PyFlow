@@ -6,6 +6,8 @@ from examples.B1_SimplePackedBedExample_StepByStepSim import main as run_packed_
 from examples.B2_PackedBedExample_StoppingFlowRate import main as run_packed_bed_stopping_flow_example
 from examples.C1_LoadAndPrepareMeasurements import main as load_and_prepare_measurements
 from examples.C2_LoadAndPrepareMeasurements_Seperatly import main as load_and_prepare_measurements_seperatly
+from examples.D0_LoadPreparedMeasurementData import main as load_prepared_measurement_data
+from examples.D1_TestPreparedMeasurementDataOnReactor import main as test_prepared_measurement_data_on_reactor
 
 if __name__ == "__main__":
     #run_simple_example()
@@ -17,6 +19,8 @@ if __name__ == "__main__":
     #run_packed_bed_stopping_flow_example()
 
     #load_and_prepare_measurements() 
-    load_and_prepare_measurements_seperatly()
+    #load_and_prepare_measurements_seperatly()
+    #load_prepared_measurement_data()
+    test_prepared_measurement_data_on_reactor()
 
     input("Press Enter to exit...")

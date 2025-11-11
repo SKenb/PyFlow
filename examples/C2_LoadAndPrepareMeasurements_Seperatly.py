@@ -245,7 +245,7 @@ def main():
             ]
         )
 
-        reducedData = reduceDataToTimeRange(mergedMeasurements, "RelTime", dayInfos["xLimits"][0]*3600, dayInfos["xLimits"][1]*3600) if dayInfos["xLimits"] is not None else mergedMeasurements
+        reducedData = reduceDataToTimeRange(mergedData, "RelTime", dayInfos["xLimits"][0]*3600, dayInfos["xLimits"][1]*3600) if dayInfos["xLimits"] is not None else mergedData
         saveToPickle(reducedData, f"C:\\Users\\sebkno\\SynologyDrive\\PhD\\11_Hydrogenation\\B0_BuchwaldHartwigReaction\\PreparedData\\PreparedMeasurements_{dayInfos['day']}_{dayInfos['month']}.pkl")
 
 if __name__ == "__main__":
