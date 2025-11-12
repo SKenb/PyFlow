@@ -175,7 +175,7 @@ class FlowReactor:
             ax.set_title(title)
             ax.set_xlabel("Time t in s")
             ax.set_ylabel("Concentration in mol/L")
-            ax.set_ylim(0, 1.1)
+            #ax.set_ylim(0, 1.1)
 
             ax.legend()
 
