@@ -141,8 +141,10 @@ def main():
 
                 flowReactor.reactionNetworkCallback = lambda C, i, T: buchwaldHartwigReactionParams(
                     C, i, T, 
-                    A1=x[0], Ea1=x[1], A2=x[2], Ea2=x[3], A3=x[4], Ea3=x[5], A4=x[6], Ea4=x[7], 
-                    k11=x[8], k12=x[9], k21=x[10], k22=x[11], k31=x[12], k32=x[13], k41=x[14]
+                    A1=x[0], Ea1=x[1], #A2=x[2], Ea2=x[3], A3=x[4], Ea3=x[5], A4=x[6], Ea4=x[7], 
+                    #k11=x[8], k12=x[9], k21=x[10], k22=x[11], k31=x[12], k32=x[13], k41=x[14]
+                    A2=0, Ea2=0, A3=0, Ea3=0, A4=0, Ea4=0,
+                    k11=x[2], k12=x[3], k21=1, k22=1, k31=1, k32=1, k41=1
                 )
 
                 timeSim, CoutSim, _ = flowReactor.simulate(
@@ -154,7 +156,7 @@ def main():
 
                 error = CoutSim[0, :] - np.array(measuredData["Meas Bromonitrobenzene (UHPLC)"])
                 error = error[np.where((timeSim >= timeMinMax[0]) & (timeSim <= timeMinMax[1]))]
-                error = np.sum(error**2)
+                error = 1e3*np.sum(error**2)
 
                 # Ctrl plot
                 figure = plt.figure(num=10, figsize=(8, 5))
@@ -166,8 +168,7 @@ def main():
                 ax.set_title("Ctrl Plot for Optimization")
                 ax.legend()
 
-                print(f"Simulated with params: {x}")
-                error = 0
+                print(f"Simulated with params: {x} --> Objective Error: {error}")
                 return error
 
 
@@ -175,8 +176,10 @@ def main():
             EaBound = (1e3, 1e5)
             kBound = (0, 300)
 
-            bounds = [ABound, EaBound, ABound, EaBound, ABound, EaBound, ABound, EaBound, kBound, kBound, kBound, kBound, kBound, kBound, kBound, kBound]
-            x0 = [1, 3e4, 1, 3e4, 1, 3e4, 1, 3e4, 1, 1, 1, 1, 1, 1, 1, 1]
+            #bounds = [ABound, EaBound, ABound, EaBound, ABound, EaBound, ABound, EaBound, kBound, kBound, kBound, kBound, kBound, kBound, kBound, kBound]
+            #x0 = [1, 3e4, 1, 3e4, 1, 3e4, 1, 3e4, 1, 1, 1, 1, 1, 1, 1, 1]
+            bounds = [ABound, EaBound, kBound, kBound]
+            x0 = [1, 3e4, 1, 1]
 
             objective = lambda x: objectiveFunction(
                 x, flowReactor, timeVec, Cin, totalFlowRate, temperature, data,
@@ -186,6 +189,24 @@ def main():
 
             print("Optimal x:", result.x)
             print("Objective value:", result.fun)
+
+            x = result.x
+
+            ## Simualte reactor with found optimum
+            flowReactor.reactionNetworkCallback = lambda C, i, T: buchwaldHartwigReactionParams(
+                C, i, T, 
+                A1=x[0], Ea1=x[1], #A2=x[2], Ea2=x[3], A3=x[4], Ea3=x[5], A4=x[6], Ea4=x[7], 
+                #k11=x[8], k12=x[9], k21=x[10], k22=x[11], k31=x[12], k32=x[13], k41=x[14]
+                A2=0, Ea2=0, A3=0, Ea3=0, A4=0, Ea4=0,
+                k11=x[2], k12=x[3], k21=1, k22=1, k31=1, k32=1, k41=1
+            )
+
+            time, Cout, _ = flowReactor.simulate(
+                timeVec, 
+                Cin, 
+                totalFlowRate, 
+                temperature,
+            )
 
 
             ## Plot data
@@ -204,6 +225,9 @@ def main():
             #)
 
             # Plot outputs
+
+            
+
             figure = plt.figure(figsize=(10, 6))
 
             toPlotData = [
