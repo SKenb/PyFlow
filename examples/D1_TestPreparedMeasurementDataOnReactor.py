@@ -2,6 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
+from scipy.optimize import minimize
 from PyFlow.Measurements import loadFromPickle, plotData, reduceDataToTimeRange
 from PyFlow.FlowReactor import FlowReactor
 
@@ -48,6 +49,49 @@ def buchwaldHartwigReaction(C, i, temperature):
     
     return R
 
+def buchwaldHartwigReactionParams(C, i, temperature, A1, Ea1, A2, Ea2, A3, Ea3, A4, Ea4, k11, k12, k21, k22, k31, k32, k41):
+    temperature_K = temperature + 273.15
+    reactionRate = lambda Ca, Cb, A, E: A * np.exp(-E/(8.314*temperature_K)) * Ca * Cb
+    
+    reactionMap = {
+        0: { "consumed": {1: k11}, "produced": {} },
+        1: { "consumed": {2: k21}, "produced": {} },
+        2: { "consumed": {3: k31}, "produced": {} },
+        3: { "consumed": {1: k12}, "produced": {4: 1} },
+        4: { "consumed": {2: k22}, "produced": {1: 1} },
+        5: { "consumed": {3: k32}, "produced": {2: 1} },
+        6: { "consumed": {4: k41}, "produced": {3: 1} },
+        7: { "consumed": {}, "produced": {4: 1} },
+    }
+    
+    # Reaction 1 - Catalyst (PdL) + 2-Brom --> PdInt1
+    R1 = reactionRate(C[3, :], C[0, :], A1, Ea1)
+    R1[np.where(np.isnan(R1))] = 0
+
+    # Reaction 2 - PdInt1 + Thiophene --> PdInt2
+    R2 = reactionRate(C[4, :], C[1, :], A2, Ea2)
+    R2[np.where(np.isnan(R2))] = 0
+
+    # Reaction 3 - PdInt2 + DBU --> PdInt3 + HBr
+    R3 = reactionRate(C[5, :], C[2, :], A3, Ea3)
+    R3[np.where(np.isnan(R3))] = 0
+
+    # Reaction 4 - PdInt3 --> Catalyst (PdL) + Product
+    R4 = reactionRate(C[6, :], 1, A4, Ea4)
+    R4[np.where(np.isnan(R4))] = 0
+
+    RMap = { 1: R1, 2: R2, 3: 0*R3, 4: 0*R4}
+
+    # Total rates of change
+    reactionInfos = reactionMap[i]
+
+    R = np.zeros_like(C[0, :])
+    for idx, coeff in reactionInfos["produced"].items(): R += coeff * RMap[idx]
+    for idx, coeff in reactionInfos["consumed"].items(): R -= coeff * RMap[idx]
+    if np.isnan(R).any(): raise ValueError(f"Reaction rate for species index {i} contains NaN values.")
+    
+    return R
+
 
 def main():
     pickleFilePath = "C:\\Users\\sebkno\\SynologyDrive\\PhD\\11_Hydrogenation\\B0_BuchwaldHartwigReaction\\PreparedData\\"
@@ -57,7 +101,7 @@ def main():
     flowReactor = FlowReactor(
         length=10, diameter=0.8*1e-3, 
         reactionNetworkCallback=buchwaldHartwigReaction,
-        setSpaceSamples=40
+        setSpaceSamples=20
     )
     flowReactor.setVolumeIn_mL(4.67)
 
@@ -65,12 +109,13 @@ def main():
 
     for pf in pickleFiles:
         if pf.endswith(".pkl"):
+
             fullPath = os.path.join(pickleFilePath, pf)
             data = loadFromPickle(fullPath)
             dataSets[pf] = data
             print(f"Loaded data from {pf} with keys: {list(data.keys())} and {len(next(iter(data.values())))} entries.")
 
-            data = reduceDataToTimeRange(data, "RelTime", 0, 10000)
+            data = reduceDataToTimeRange(data, "RelTime", 0, 5000)
 
             timeVec = np.array([t - data["RelTime"][0] for t in data["RelTime"]])
             temperature = np.array(data["Temp"])
@@ -83,13 +128,64 @@ def main():
             Cin[2, :] = np.array(data["Conc DBU"])
             Cin[3, :] = np.array(data["Conc Xantphos"])
 
-            # Test on reactor
-            time, Cout, Cspatial = flowReactor.simulate(
-                timeVec, 
-                Cin, 
-                totalFlowRate, 
-                temperature,
+            ## Test on reactor
+            #time, Cout, _ = flowReactor.simulate(
+            #    timeVec, 
+            #    Cin, 
+            #    totalFlowRate, 
+            #    temperature,
+            #)
+
+            ## Do optimization
+            def objectiveFunction(x, flowReactor, timeVec, Cin, totalFlowRate, temperature, measuredData, timeMinMax):
+
+                flowReactor.reactionNetworkCallback = lambda C, i, T: buchwaldHartwigReactionParams(
+                    C, i, T, 
+                    A1=x[0], Ea1=x[1], A2=x[2], Ea2=x[3], A3=x[4], Ea3=x[5], A4=x[6], Ea4=x[7], 
+                    k11=x[8], k12=x[9], k21=x[10], k22=x[11], k31=x[12], k32=x[13], k41=x[14]
+                )
+
+                timeSim, CoutSim, _ = flowReactor.simulate(
+                    timeVec, 
+                    Cin, 
+                    totalFlowRate, 
+                    temperature,
+                )
+
+                error = CoutSim[0, :] - np.array(measuredData["Meas Bromonitrobenzene (UHPLC)"])
+                error = error[np.where((timeSim >= timeMinMax[0]) & (timeSim <= timeMinMax[1]))]
+                error = np.sum(error**2)
+
+                # Ctrl plot
+                figure = plt.figure(num=10, figsize=(8, 5))
+                ax = figure.add_subplot(1, 1, 1)
+                ax.plot(timeSim, CoutSim[0, :], 'r--', label="Simulated Cout 2-bromonitrobenze")
+                ax.plot(timeVec, measuredData["Meas Bromonitrobenzene (UHPLC)"], 'b--', label="Measured Cout 2-bromonitrobenze (UHPLC)")
+                ax.plot(timeVec[np.where((timeVec >= timeMinMax[0]) & (timeVec <= timeMinMax[1]))], np.array(measuredData["Meas Bromonitrobenzene (UHPLC)"])[np.where((timeVec >= timeMinMax[0]) & (timeVec <= timeMinMax[1]))], 'b', label="Data used for error calc.")
+                ax.plot(timeSim[np.where((timeSim >= timeMinMax[0]) & (timeSim <= timeMinMax[1]))], CoutSim[0, np.where((timeSim >= timeMinMax[0]) & (timeSim <= timeMinMax[1]))][0], 'r', label="Sim used for error calc.")
+                ax.set_title("Ctrl Plot for Optimization")
+                ax.legend()
+
+                print(f"Simulated with params: {x}")
+                error = 0
+                return error
+
+
+            ABound = (1, 1e3)
+            EaBound = (1e3, 1e5)
+            kBound = (0, 300)
+
+            bounds = [ABound, EaBound, ABound, EaBound, ABound, EaBound, ABound, EaBound, kBound, kBound, kBound, kBound, kBound, kBound, kBound, kBound]
+            x0 = [1, 3e4, 1, 3e4, 1, 3e4, 1, 3e4, 1, 1, 1, 1, 1, 1, 1, 1]
+
+            objective = lambda x: objectiveFunction(
+                x, flowReactor, timeVec, Cin, totalFlowRate, temperature, data,
+                timeMinMax=(2000, 2700)
             )
+            result = minimize(objective, x0, method='SLSQP', bounds=bounds, constraints=[])
+
+            print("Optimal x:", result.x)
+            print("Objective value:", result.fun)
 
 
             ## Plot data
