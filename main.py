@@ -8,6 +8,7 @@ from examples.C1_LoadAndPrepareMeasurements import main as load_and_prepare_meas
 from examples.C2_LoadAndPrepareMeasurements_Seperatly import main as load_and_prepare_measurements_seperatly
 from examples.D0_LoadPreparedMeasurementData import main as load_prepared_measurement_data
 from examples.D1_TestPreparedMeasurementDataOnReactor import main as test_prepared_measurement_data_on_reactor
+from examples.D2_ParameterOptimization import main as parameter_optimization
 
 if __name__ == "__main__":
     #run_simple_example()
@@ -21,6 +22,7 @@ if __name__ == "__main__":
     #load_and_prepare_measurements() 
     #load_and_prepare_measurements_seperatly()
     #load_prepared_measurement_data()
-    test_prepared_measurement_data_on_reactor()
+    #test_prepared_measurement_data_on_reactor()
+    parameter_optimization()
 
     input("Press Enter to exit...")
